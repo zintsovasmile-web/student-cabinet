@@ -788,12 +788,31 @@
     }
 
 
+    .homework-grid{
+      display:grid;
+      grid-template-columns:minmax(0, .95fr) minmax(0, 1.05fr);
+      gap:22px;
+      align-items:start;
+      margin-top:4px;
+    }
+    .homework-main,
+    .homework-question{
+      min-width:0;
+    }
+    .homework-main{
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    .homework-main .resources{
+      margin-top:0;
+    }
     .homework-actions{
       display:flex;
-      flex-wrap:wrap;
+      flex-direction:column;
       gap:10px;
-      margin-top:12px;
-      align-items:center;
+      margin-top:2px;
+      align-items:flex-start;
     }
     .done-btn{
       border:0;
@@ -815,13 +834,20 @@
       color:var(--ink);
     }
     .question-box{
-      margin-top:14px;
-      padding-top:14px;
-      border-top:1px solid rgba(18,31,54,.12);
+      margin-top:0;
+      padding:16px;
+      border:1px solid rgba(92,100,204,.16);
+      border-radius:18px;
+      background:rgba(92,100,204,.07);
+    }
+    .question-label{
+      display:block;
+      margin-bottom:10px;
+      font-weight:800;
     }
     .question-box textarea{
       width:100%;
-      min-height:78px;
+      min-height:124px;
       resize:vertical;
       border:1px solid rgba(18,31,54,.18);
       border-radius:14px;
@@ -835,11 +861,11 @@
       display:flex;
       gap:10px;
       align-items:center;
-      margin-top:9px;
+      margin-top:12px;
       flex-wrap:wrap;
     }
     .question-send{
-      border:1px solid rgba(18,31,54,.22);
+      border:2px solid rgba(92,100,204,.32);
       background:#fff;
       color:var(--ink);
       border-radius:12px;
@@ -848,12 +874,24 @@
       font-weight:800;
       cursor:pointer;
     }
+    .question-send:hover{
+      background:rgba(92,100,204,.08);
+    }
     .teacher-answer{
       margin-top:10px;
       border-radius:12px;
       padding:11px 13px;
       background:rgba(255,255,255,.72);
       font-size:14px;
+    }
+    @media (max-width:720px){
+      .homework-grid{
+        grid-template-columns:1fr;
+        gap:16px;
+      }
+      .question-box textarea{
+        min-height:110px;
+      }
     }
 
 </style>
@@ -1017,16 +1055,16 @@ async function enter(){
     if(!data.ok){
       const fallback = await localFallback(code);
       if(!fallback) throw new Error(data.error || 'Код не найден');
-      localStorage.setItem('schoolCode', code);
+      sessionStorage.setItem('schoolCode', code);
       render(fallback);
     }else{
-      localStorage.setItem('schoolCode', code);
+      sessionStorage.setItem('schoolCode', code);
       render(data);
     }
   }catch(e){
     const fallback = await localFallback(code);
     if(fallback){
-      localStorage.setItem('schoolCode', code);
+      sessionStorage.setItem('schoolCode', code);
       render(fallback);
       errorBox.textContent = '';
     }else{
@@ -1041,25 +1079,20 @@ async function enter(){
 let CURRENT_DATA = null;
 
 async function apiAction(action, params = {}){
-  const code = localStorage.getItem('schoolCode') || '';
+  const code = sessionStorage.getItem('schoolCode') || '';
   if(!code) throw new Error('Сначала войдите в кабинет');
   const qs = new URLSearchParams({action, code, ...params});
   return jsonp(API_URL + '?' + qs.toString());
 }
 
-function localSubmissionKey(studentId, lessonId){
-  return `hwDone:${studentId}:${lessonId}`;
-}
-
-async function markHomeworkDone(button, studentId, lessonId){
+async function markHomeworkDone(button, lessonId){
   button.disabled = true;
   button.textContent = 'Отправляю…';
   try{
     const data = await apiAction('submitHomework', {lessonId});
     if(!data.ok) throw new Error(data.error || 'Не удалось отправить');
-    localStorage.setItem(localSubmissionKey(studentId, lessonId), '1');
     button.textContent = 'Отправлено преподавателю ✓';
-    const status = button.parentElement.querySelector('.homework-status');
+    const status = button.closest('.homework-section')?.querySelector('.homework-status');
     if(status) status.textContent = 'Отмечено как выполненное';
   }catch(e){
     button.disabled = false;
@@ -1141,15 +1174,16 @@ function render(data){
       const allResources = lesson.resources || [];
       const homeworkResources = allResources.filter(r => r.type === 'ДЗ');
       const solutionResources = allResources.filter(r => r.type === 'разбор задач');
-      const otherResources = allResources.filter(r => r.type !== 'ДЗ' && r.type !== 'разбор задач');
+      const materialResources = allResources.filter(r => r.type !== 'ДЗ' && r.type !== 'разбор задач');
 
       const resourceButtons = items => items.map(r =>
         `<a class="btn" target="_blank" rel="noopener" href="${escapeAttr(r.url)}">${escapeHtml(r.title)}</a>`
       ).join('');
 
-      const otherResourcesHtml = resourceButtons(otherResources);
+      const materialResourcesHtml = resourceButtons(materialResources);
       const homeworkResourcesHtml = resourceButtons(homeworkResources);
       const solutionResourcesHtml = resourceButtons(solutionResources);
+      const hasMaterialContent = Boolean((lesson.materialOpen && lesson.material) || materialResources.length);
 
       const result = lesson.result ? `
         <div class="result">
@@ -1169,37 +1203,42 @@ function render(data){
           ${lesson.materialOpen && lesson.material
             ? `<div class="material">${escapeHtml(lesson.material)}</div>`
             : ''}
-          ${otherResourcesHtml
+          ${materialResourcesHtml
             ? `<div class="lesson-section">
                  <div class="lesson-section-title">Материалы занятия</div>
-                 <div class="resources">${otherResourcesHtml}</div>
+                 <div class="resources">${materialResourcesHtml}</div>
                </div>`
             : ''}
-          ${(!lesson.materialOpen || !lesson.material) && !otherResourcesHtml && !homeworkResourcesHtml
+          ${!hasMaterialContent
             ? `<div class="empty">Материалы занятия пока не опубликованы.</div>`
             : ''}
 
           ${(lesson.homework || homeworkResourcesHtml) ? `
             <div class="lesson-section homework-section">
-              <div class="lesson-section-title">Домашнее задание</div>
-              ${lesson.homework ? `<div>${escapeHtml(lesson.homework)}</div>` : ''}
-              ${homeworkResourcesHtml ? `<div class="resources">${homeworkResourcesHtml}</div>` : ''}
-              <div class="homework-actions">
-                <button class="done-btn homework-done"
-                        data-student="${escapeAttr(data.student.id)}"
-                        data-lesson="${escapeAttr(lesson.lessonId)}">
-                  Домашнее задание выполнено
-                </button>
-                <span class="homework-status"></span>
-              </div>
-              <div class="question-box">
-                <textarea placeholder="Есть вопрос по домашнему заданию? Напишите его здесь."></textarea>
-                <div class="question-row">
-                  <button class="question-send" data-lesson="${escapeAttr(lesson.lessonId)}">Задать вопрос</button>
+              <div class="homework-grid">
+                <div class="homework-main">
+                  <div class="lesson-section-title">Домашнее задание</div>
+                  ${lesson.homework ? `<div>${escapeHtml(lesson.homework)}</div>` : ''}
+                  ${homeworkResourcesHtml ? `<div class="resources">${homeworkResourcesHtml}</div>` : ''}
+                  <div class="homework-actions">
+                    <button class="done-btn homework-done"
+                            data-student="${escapeAttr(data.student.id)}"
+                            data-lesson="${escapeAttr(lesson.lessonId)}">
+                      Я выполнил домашнее задание, можете проверять меня
+                    </button>
+                    <span class="homework-status"></span>
+                  </div>
                 </div>
-                ${(lesson.questions || []).filter(q=>q.answer).map(q=>`
-                  <div class="teacher-answer"><strong>Ответ преподавателя:</strong> ${escapeHtml(q.answer)}</div>
-                `).join('')}
+                <div class="question-box homework-question">
+                  <label class="question-label">Вопрос преподавателю</label>
+                  <textarea placeholder="Есть вопрос по домашнему заданию? Напишите его здесь."></textarea>
+                  <div class="question-row">
+                    <button class="question-send" data-lesson="${escapeAttr(lesson.lessonId)}">Задать вопрос</button>
+                  </div>
+                  ${(lesson.questions || []).filter(q=>q.answer).map(q=>`
+                    <div class="teacher-answer"><strong>Ответ преподавателя:</strong> ${escapeHtml(q.answer)}</div>
+                  `).join('')}
+                </div>
               </div>
             </div>` : ''}
 
@@ -1216,15 +1255,14 @@ function render(data){
 
       const doneBtn = el.querySelector('.homework-done');
       if(doneBtn){
-        const alreadyDone = Boolean(lesson.homeworkSubmission && lesson.homeworkSubmission.status === 'сдано')
-          || localStorage.getItem(localSubmissionKey(data.student.id, lesson.lessonId)) === '1';
+        const alreadyDone = Boolean(lesson.homeworkSubmission && lesson.homeworkSubmission.status === 'сдано');
         if(alreadyDone){
           doneBtn.disabled = true;
           doneBtn.textContent = 'Отправлено преподавателю ✓';
           const s = el.querySelector('.homework-status');
           if(s) s.textContent = 'Отмечено как выполненное';
         }else{
-          doneBtn.addEventListener('click',()=>markHomeworkDone(doneBtn, data.student.id, lesson.lessonId));
+          doneBtn.addEventListener('click',()=>markHomeworkDone(doneBtn, lesson.lessonId));
         }
       }
 
@@ -1248,13 +1286,19 @@ function escapeAttr(s){ return escapeHtml(s); }
 $('#loginBtn').addEventListener('click', enter);
 $('#code').addEventListener('keydown', e=>{if(e.key==='Enter') enter()});
 $('#logoutBtn').addEventListener('click',()=>{
+  sessionStorage.removeItem('schoolCode');
   localStorage.removeItem('schoolCode');
+  CURRENT_DATA = null;
   dashboard.hidden = true;
   login.hidden = false;
   $('#code').value = '';
+  $('#lessons').innerHTML = '';
+  $('#studentName').textContent = '';
+  errorBox.textContent = '';
 });
 
-const saved = localStorage.getItem('schoolCode');
+localStorage.removeItem('schoolCode');
+const saved = sessionStorage.getItem('schoolCode');
 if(saved){
   $('#code').value = saved;
   enter();
