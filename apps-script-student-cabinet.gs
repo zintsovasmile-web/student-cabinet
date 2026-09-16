@@ -211,3 +211,12 @@ function respond_(params, payload) {
     .createTextOutput(json)
     .setMimeType(ContentService.MimeType.JSON);
 }
+
+function testSubmitHomework() {
+  const result = submitHomework_({
+    code: '7-K4M8',
+    lessonId: '7О.01',
+  });
+
+  Logger.log(JSON.stringify(result, null, 2));
+}
