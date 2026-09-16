@@ -1024,16 +1024,8 @@ function jsonp(url, options = {}){
     const cb = '__schoolCb_' + Date.now() + '_' + Math.floor(Math.random()*10000);
     const script = document.createElement('script');
     const timeoutMs = options.timeoutMs || 10000;
-    const resolveOnTimeout = Boolean(options.resolveOnTimeout);
     let settled = false;
-    let cleanupTimer = null;
     const timer = setTimeout(()=>{
-      if(resolveOnTimeout){
-        settled = true;
-        resolve({ok:true, pending:true});
-        cleanupTimer = setTimeout(cleanup, 60000);
-        return;
-      }
       const err = new Error('Сервер не ответил. Проверьте соединение и попробуйте ещё раз.');
       err.name = 'TimeoutError';
       finish(err);
@@ -1041,7 +1033,6 @@ function jsonp(url, options = {}){
 
     function cleanup(){
       clearTimeout(timer);
-      if(cleanupTimer) clearTimeout(cleanupTimer);
       try{delete window[cb]}catch(e){}
       script.remove();
     }
@@ -1113,17 +1104,17 @@ async function markHomeworkDone(button, lessonId){
   button.disabled = true;
   button.textContent = 'Отправляю…';
   try{
-    const data = await apiAction('submitHomework', {lessonId}, {resolveOnTimeout:true});
+    const data = await apiAction('submitHomework', {lessonId}, {timeoutMs:15000});
     if(!data.ok) throw new Error(data.error || 'Не удалось отправить');
     button.textContent = 'Отправлено преподавателю ✓';
     const status = button.closest('.homework-section')?.querySelector('.homework-status');
-    if(status) status.textContent = data.pending
-      ? 'Запрос отправлен преподавателю'
-      : 'Отмечено как выполненное';
+    if(status) status.textContent = 'Отмечено как выполненное';
   }catch(e){
     button.disabled = false;
     button.textContent = 'Я выполнил домашнее задание, можете проверять меня';
-    alert('Не удалось отметить ДЗ: ' + (e.message || 'Проверьте соединение и попробуйте ещё раз.'));
+    const status = button.closest('.homework-section')?.querySelector('.homework-status');
+    if(status) status.textContent = 'Не записалось в журнал. Попробуйте ещё раз или напишите преподавателю.';
+    alert('Не удалось записать ДЗ в журнал: ' + (e.message || 'Проверьте соединение и попробуйте ещё раз.'));
   }
 }
 
