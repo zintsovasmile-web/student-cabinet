@@ -894,6 +894,12 @@
       }
     }
 
+    /* Письма преподавателя внутри конкретного урока. */
+    .lesson-teacher-notes{display:grid;gap:12px;margin:0 0 18px}
+    .lesson-teacher-note{padding:16px;border:1px solid var(--lav);border-radius:14px;background:#f7f5fc}
+    .lesson-teacher-note.personal{border-color:var(--sky);background:#f1f8ff}
+    .lesson-teacher-note-title{font-weight:800;margin-bottom:8px}
+    .lesson-teacher-note-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65}
 </style>
 
 </head>
@@ -1208,6 +1214,19 @@ function render(data){
           <div class="chev">⌄</div>
         </div>
         <div class="lesson-body">
+          ${(lesson.teacherMessage || lesson.personalMessage) ? `
+            <div class="lesson-teacher-notes">
+              ${lesson.teacherMessage ? `
+                <div class="lesson-teacher-note">
+                  <div class="lesson-teacher-note-title">Сообщение преподавателя</div>
+                  <div class="lesson-teacher-note-text">${escapeHtml(lesson.teacherMessage)}</div>
+                </div>` : ''}
+              ${lesson.personalMessage ? `
+                <div class="lesson-teacher-note personal">
+                  <div class="lesson-teacher-note-title">Личный комментарий преподавателя</div>
+                  <div class="lesson-teacher-note-text">${escapeHtml(lesson.personalMessage)}</div>
+                </div>` : ''}
+            </div>` : ''}
           ${lesson.materialOpen && lesson.material
             ? `<div class="material">${escapeHtml(lesson.material)}</div>`
             : ''}
