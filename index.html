@@ -899,7 +899,28 @@
     .lesson-teacher-note{padding:16px;border:1px solid var(--lav);border-radius:14px;background:#f7f5fc}
     .lesson-teacher-note.personal{border-color:var(--sky);background:#f1f8ff}
     .lesson-teacher-note-title{font-weight:800;margin-bottom:8px}
-    .lesson-teacher-note-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65}
+    .lesson-teacher-note-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.65;
+  font-size: 16px;
+}
+
+.lesson-teacher-note-text a {
+  color: #345cbb;
+  text-decoration: underline;
+  word-break: break-word;
+}
+
+.lesson-teacher-note.feedback {
+  background: #f2fbf3;
+  border-color: #a9d6b0;
+}
+
+.lesson-teacher-note.homework-note {
+  background: #f8f6ff;
+  border-color: #b5b0e3;
+}
 </style>
 
 </head>
@@ -1214,19 +1235,7 @@ function render(data){
           <div class="chev">⌄</div>
         </div>
         <div class="lesson-body">
-          ${(lesson.teacherMessage || lesson.personalMessage) ? `
-            <div class="lesson-teacher-notes">
-              ${lesson.teacherMessage ? `
-                <div class="lesson-teacher-note">
-                  <div class="lesson-teacher-note-title">Сообщение преподавателя</div>
-                  <div class="lesson-teacher-note-text">${escapeHtml(lesson.teacherMessage)}</div>
-                </div>` : ''}
-              ${lesson.personalMessage ? `
-                <div class="lesson-teacher-note personal">
-                  <div class="lesson-teacher-note-title">Личный комментарий преподавателя</div>
-                  <div class="lesson-teacher-note-text">${escapeHtml(lesson.personalMessage)}</div>
-                </div>` : ''}
-            </div>` : ''}
+          ${renderTeacherNotes(lesson)}
           ${lesson.materialOpen && lesson.material
             ? `<div class="material">${escapeHtml(lesson.material)}</div>`
             : ''}
@@ -1303,6 +1312,80 @@ function render(data){
 
     box.appendChild(section);
   });
+}
+
+function teacherText(text) {
+  return String(text || '')
+    .split(/(https?:\/\/[^\s<>]+)/gi)
+    .map(part => {
+      if (!/^https?:\/\//i.test(part)) {
+        return escapeHtml(part);
+      }
+
+      const url = part.replace(/[),;!?]+$/, '');
+      const suffix = part.slice(url.length);
+
+      return `<a href="${escapeAttr(url)}"
+                 target="_blank"
+                 rel="noopener noreferrer">${escapeHtml(url)}</a>${escapeHtml(suffix)}`;
+    })
+    .join('');
+}
+
+function noteBlock(title, text, type = '') {
+  if (!String(text || '').trim()) return '';
+
+  return `
+    <div class="lesson-teacher-note ${type}">
+      <div class="lesson-teacher-note-title">
+        ${escapeHtml(title)}
+      </div>
+      <div class="lesson-teacher-note-text">
+        ${teacherText(text)}
+      </div>
+    </div>`;
+}
+
+function renderTeacherNotes(lesson) {
+  let html = '';
+
+  if (lesson.teacherMessage) {
+    html += noteBlock(
+      'Сообщение преподавателя',
+      lesson.teacherMessage
+    );
+  }
+
+  if (lesson.personalMessage) {
+    const text = String(lesson.personalMessage);
+    const marker = 'Личная обратная связь:';
+    const position = text.indexOf(marker);
+
+    if (position >= 0) {
+      html += noteBlock(
+        'Индивидуальное домашнее задание',
+        text.slice(0, position),
+        'homework-note'
+      );
+
+      html += noteBlock(
+        'Личный комментарий преподавателя',
+        text.slice(position + marker.length),
+        'feedback'
+      );
+    } else {
+      html += noteBlock(
+        /^Домашнее задание\s*:/i.test(text.trim())
+          ? 'Индивидуальное домашнее задание'
+          : 'Личный комментарий преподавателя',
+        text
+      );
+    }
+  }
+
+  return html
+    ? `<div class="lesson-teacher-notes">${html}</div>`
+    : '';
 }
 
 function escapeHtml(s){
