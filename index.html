@@ -900,11 +900,13 @@
     .lesson-teacher-note.personal{border-color:var(--sky);background:#f1f8ff}
     .lesson-teacher-note-title{font-weight:800;margin-bottom:8px}
     .lesson-teacher-note-text {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  line-height: 1.65;
-  font-size: 16px;
-}
+      white-space: pre-wrap;
+      white-space: break-spaces;
+      overflow-wrap: anywhere;
+      tab-size: 4;
+      line-height: 1.65;
+      font-size: 16px;
+    }
 
 .lesson-teacher-note-text a {
   color: #345cbb;
@@ -1314,8 +1316,8 @@ function render(data){
   });
 }
 
-function teacherText(text) {
-  return String(text || '')
+function plainTeacherText(text) {
+  return String(text ?? '')
     .split(/(https?:\/\/[^\s<>]+)/gi)
     .map(part => {
       if (!/^https?:\/\//i.test(part)) {
@@ -1332,45 +1334,118 @@ function teacherText(text) {
     .join('');
 }
 
+function richTextValue(value) {
+  if (value && typeof value === 'object' && typeof value.text === 'string') {
+    return value;
+  }
+  return {text: String(value ?? ''), runs: []};
+}
+
+function safeTextColor(color) {
+  const value = String(color || '').trim();
+  return /^(?:#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\))$/i.test(value) ? value : '';
+}
+
+function richRunHtml(text, run) {
+  let html = escapeHtml(text);
+  if (!html) return '';
+
+  if (run.bold) html = `<strong>${html}</strong>`;
+  if (run.italic) html = `<em>${html}</em>`;
+  if (run.underline) html = `<u>${html}</u>`;
+  if (run.strikethrough) html = `<s>${html}</s>`;
+
+  const color = safeTextColor(run.color);
+  if (color) html = `<span style="color:${escapeAttr(color)}">${html}</span>`;
+
+  if (/^https?:\/\//i.test(String(run.url || ''))) {
+    html = `<a href="${escapeAttr(run.url)}" target="_blank" rel="noopener noreferrer">${html}</a>`;
+  }
+
+  return html;
+}
+
+function teacherText(value) {
+  const rich = richTextValue(value);
+  const runs = Array.isArray(rich.runs) ? rich.runs : [];
+  if (!runs.length) return plainTeacherText(rich.text);
+
+  let cursor = 0;
+  let html = '';
+  runs
+    .map(run => ({
+      ...run,
+      start: Math.max(0, Math.min(rich.text.length, Number(run.start) || 0)),
+      end: Math.max(0, Math.min(rich.text.length, Number(run.end) || 0))
+    }))
+    .filter(run => run.end > run.start)
+    .sort((a, b) => a.start - b.start || a.end - b.end)
+    .forEach(run => {
+      if (run.start > cursor) html += plainTeacherText(rich.text.slice(cursor, run.start));
+      const start = Math.max(cursor, run.start);
+      if (run.end > start) html += richRunHtml(rich.text.slice(start, run.end), run);
+      cursor = Math.max(cursor, run.end);
+    });
+
+  if (cursor < rich.text.length) html += plainTeacherText(rich.text.slice(cursor));
+  return html;
+}
+
+function sliceRichText(value, start, end) {
+  const rich = richTextValue(value);
+  const from = Math.max(0, Math.min(rich.text.length, Number(start) || 0));
+  const to = end == null
+    ? rich.text.length
+    : Math.max(from, Math.min(rich.text.length, Number(end) || 0));
+
+  return {
+    text: rich.text.slice(from, to),
+    runs: (Array.isArray(rich.runs) ? rich.runs : [])
+      .map(run => ({
+        ...run,
+        start: Math.max(Number(run.start) || 0, from) - from,
+        end: Math.min(Number(run.end) || 0, to) - from
+      }))
+      .filter(run => run.end > run.start)
+  };
+}
+
 function noteBlock(title, text, type = '') {
-  if (!String(text || '').trim()) return '';
+  if (!richTextValue(text).text.trim()) return '';
 
   return `
     <div class="lesson-teacher-note ${type}">
-      <div class="lesson-teacher-note-title">
-        ${escapeHtml(title)}
-      </div>
-      <div class="lesson-teacher-note-text">
-        ${teacherText(text)}
-      </div>
+      <div class="lesson-teacher-note-title">${escapeHtml(title)}</div>
+      <div class="lesson-teacher-note-text">${teacherText(text)}</div>
     </div>`;
 }
 
 function renderTeacherNotes(lesson) {
   let html = '';
 
-  if (lesson.teacherMessage) {
+  if (lesson.teacherMessageRich || lesson.teacherMessage) {
     html += noteBlock(
       'Сообщение преподавателя',
-      lesson.teacherMessage
+      lesson.teacherMessageRich || lesson.teacherMessage
     );
   }
 
-  if (lesson.personalMessage) {
-    const text = String(lesson.personalMessage);
+  if (lesson.personalMessageRich || lesson.personalMessage) {
+    const message = richTextValue(lesson.personalMessageRich || lesson.personalMessage);
+    const text = message.text;
     const marker = 'Личная обратная связь:';
     const position = text.indexOf(marker);
 
     if (position >= 0) {
       html += noteBlock(
         'Индивидуальное домашнее задание',
-        text.slice(0, position),
+        sliceRichText(message, 0, position),
         'homework-note'
       );
 
       html += noteBlock(
         'Личный комментарий преподавателя',
-        text.slice(position + marker.length),
+        sliceRichText(message, position + marker.length),
         'feedback'
       );
     } else {
@@ -1378,7 +1453,7 @@ function renderTeacherNotes(lesson) {
         /^Домашнее задание\s*:/i.test(text.trim())
           ? 'Индивидуальное домашнее задание'
           : 'Личный комментарий преподавателя',
-        text
+        message
       );
     }
   }
